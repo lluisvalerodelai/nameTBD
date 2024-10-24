@@ -1,85 +1,168 @@
+#include <ctype.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-#define WHITESPACE ' '
-#define MAX_TOKEN_LEN 10
+typedef enum {
+  int_type,
+  return_type,
+} keyword_type;
 
-char *read_file(char *file_path) {
-  FILE *fptr = fopen(file_path, "r");
+typedef enum {
+  IDENTIFIER,
+} identifier_type;
+
+typedef enum {
+  open_paren,
+  close_paren,
+  open_brace,
+  close_brace,
+  semicolon,
+} separator_type;
+
+typedef struct {
+  keyword_type type;
+  char *value;
+} keyword_token;
+
+typedef struct {
+  separator_type type;
+  char *value;
+} separator_token;
+
+char peek_next_char(FILE *file) {
+  // Save the current position
+  long current_pos = ftell(file);
+
+  // Get the next character
+  char next_char = fgetc(file);
+
+  // Restore the original position
+  fseek(file, current_pos, SEEK_SET);
+
+  return next_char; // Return the character that was peeked
+}
+
+void lexer(FILE *fptr) {
 
   if (fptr == NULL) {
     printf("\e[31m ERROR \e[0m: file could not be found \n");
-    return NULL;
   }
 
-  fseek(fptr, 0, SEEK_END);
-  int size = ftell(fptr);
-  fseek(fptr, 0, SEEK_SET);
+  char c;
+  bool are_checking_string = false;
 
-  char *text_in_file = malloc(size + 1); //+1 for the end of string
-  text_in_file[size + 1] = '\0';
-  size = fread(text_in_file, 1, size, fptr);
+  while (c != EOF) {
+    c = fgetc(fptr);
+    if (!are_checking_string) {
+      switch (c) {
+      case '\b':
+        continue;
+      case '\f':
+        continue;
+      case '\n':
+        continue;
+      case ' ':
+        continue;
+      case '\t':
+        continue;
+      case '\e':
+        continue;
+      }
+    }
+    if (c == '{') {
+      printf("Found Token: { \n");
+    } else if (c == '}') {
+      printf("Found Token: } \n");
+    } else if (c == '(') {
+      printf("Found Token: ( \n");
+    } else if (c == ')') {
+      printf("Found Token: ) \n");
+    } else if (c == ';') {
+      printf("Found Token: ; \n");
+    } else if (c == '=') {
+      printf("Found Token: = \n");
+    } else if (c >= '0' && c <= '9') {
+      char *buffer = malloc((sizeof(char) * 10) + 1);
+      if (buffer == NULL) {
+        printf(" \e[31m ERROR \e[0m: Null pointer when allocating for "
+               "numerical token\n");
+        exit(1);
+      }
+      int i = 0;
+      while (c >= '0' && c <= '9' || c == '.') {
+        if ((i + 1) % 10 == 0) {
+          char *buffer = realloc(buffer, (sizeof(char) * 10) * i);
+          if (buffer == NULL) {
+            printf(" \e[31m ERROR \e[0m: Null pointer when re-allocating for "
+                   "numerical token\n");
+            exit(1);
+          }
+        }
+        buffer[i] = c;
+        i++;
+        char next_c = peek_next_char(fptr);
+        if (next_c >= '0' && next_c <= '9' || next_c == '.') {
+          c = fgetc(fptr);
+        } else {
+          break;
+        }
+      }
+      printf("Found numeric token: %s \n", buffer);
+    } else if (c == '"') {
+      are_checking_string = true;
+      int i = 1;
+      char *buffer = malloc((sizeof(char) * 10) + 4);
 
-  return text_in_file;
-}
+      buffer[0] = c;
 
-void throw_error(char error_type) {
-  if (error_type == 'T') {
-    printf("E\e[31m ERROR \e[0m: Test error \n");
-    exit(1);
+      c = fgetc(fptr);
+
+      while (c != '"') {
+        buffer[i] = c;
+        printf("i = %i\n", i);
+        if ((i % 10) == 0) {
+          char *temp_buffer = realloc(buffer, (i + 10) * sizeof(char));
+          buffer = temp_buffer;
+        }
+
+        c = fgetc(fptr);
+        i++;
+      }
+      buffer[i] = '"';
+      printf("found string token: %s \n", buffer);
+      are_checking_string = false;
+
+    } else {
+      int i = 1;
+      char *buffer = malloc((sizeof(char) * i) + 1);
+      while (isalnum(c) && c != EOF || c == '_' || c == '-') {
+        buffer[i - 1] = c;
+        i++;
+        if (i % 10 == 0) {
+          buffer = realloc(buffer, sizeof(char) * i);
+        }
+        char next_c = peek_next_char(fptr);
+        if (isalnum(next_c) || next_c == '_' || next_c == '-') {
+          c = fgetc(fptr);
+        } else {
+          break;
+        }
+      }
+
+      if (strcmp(buffer, "main") == 0) {
+        printf("Found keyword: main \n");
+      } else if (strcmp(buffer, "return") == 0) {
+        printf("Found keyword: return\n");
+      } else if (strcmp(buffer, "int") == 0) {
+        printf("Found keyword: int \n");
+      } else {
+        printf("Found identifier: %s \n", buffer);
+      }
+    }
   }
 }
-
-typedef enum {
-  TOKEN_IDENTIFIER,
-  TOKEN_INT,
-  TOKEN_LPAREN,     // (
-  TOKEN_RPAREN,     // )
-  TOKEN_LBRACE,     // {
-  TOKEN_RBRACE,     // }
-  TOKEN_SMCOLON,    // ;
-  TOKEN_RTN,        // return
-  TOKEN_INT_LITERAL //
-} token_type;
-
-typedef struct {
-  token_type *array;
-  int dA_len;
-  int len_used;
-} dArray;
-
-void init_dArray(dArray *dAp, int initial_size) {
-  printf("\t STARTING dArray INITIALIZATION \n");
-  dAp->dA_len = initial_size;
-  printf(" ->Set dAp.dA_len to %i \n", initial_size);
-  dAp->array = malloc(initial_size * sizeof(token_type));
-  printf(" ->MEMALLOCATED: location - %p size - %lu\n", dAp,
-         initial_size * sizeof(token_type));
-  dAp->len_used = 0;
-}
-
-void insert_dArray(dArray *dAp, token_type token) {
-  printf("\t STARTING insert_dArray PROCEDURE \n");
-  printf(" ->len_used: %i \n ->dA_len: %i \n", dAp->len_used, dAp->dA_len);
-  if (dAp->len_used == dAp->dA_len) {
-    dAp->dA_len++;
-    dAp->array = realloc(dAp->array, dAp->len_used * sizeof(token_type));
-  }
-  printf(" ->Adding to array \n");
-  dAp->array[dAp->len_used++] = token;
-  printf(" ->Mem used after addition: %i \n", dAp->len_used);
-  printf(" ->Array len after addition: %i \n", dAp->dA_len);
-}
-
-void free_dArray(dArray *dAp) {
-  free(dAp->array);
-  dAp->len_used = 0;
-  dAp->dA_len = 0;
-  dAp = NULL;
-}
-
-bool is_single_char_token(char c) { return true; }
 
 int main(int argc, char **argv) {
 
@@ -87,42 +170,9 @@ int main(int argc, char **argv) {
     printf(" \e[31m ERROR \e[0m: LEXER accepts only 1 argument -> FILENAME \n");
     return 1;
   }
-
   FILE *fptr = fopen(argv[1], "r");
-  char *text_in_file = read_file(argv[1]);
 
-  /*
-   * Read next char
-   * add char to buff[0]
-   *
-   * if is_single_char_token(char) -> tokenlist add singlechartoken(c)
-   * while token_not_generated
-   *  move to next char
-   *  if is_keyword(buffer)
-   *    tokenlist add keywordtoken(buffer)
-   *    clearbuffer(*buffer)
-   *    token_not_generated = false
-   *  else
-   *    move to next char
-   *    add char to buffer
-   * */
-  int i = 0;
-  char c;
-  char *token_buffer[MAX_TOKEN_LEN];
-  bool token_generated = false;
-  dArray TOKENS;
-  init_dArray(&TOKENS, 1);
-  printf("\t STARTING MAIN TOKENIZER LOOP \n");
-  while (c != '\0') {
-    c = text_in_file[i];
-    printf("Curr C: %c \n", c);
-    if (c == '(' || c == 'n') {
-      printf("Adding ( to TOKENS\n");
-      insert_dArray(&TOKENS, TOKEN_LPAREN);
-    }
-    i++;
-  }
+  lexer(fptr);
 
-  free(text_in_file);
   return 0;
 }
